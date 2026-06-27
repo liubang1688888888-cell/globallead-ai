@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>海外客户开发 CRM</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div id="searchLoading" class="search-loading" hidden>
+        <div class="loading-card">
+          <div class="loading-spinner"></div>
+          <div>
+            <div class="loading-title">🔍 AI正在全球搜索真实企业...</div>
+            <ul class="loading-steps">
+              <li id="loadingStepAnalyze">正在分析官网...</li>
+              <li id="loadingStepContact">正在提取联系方式...</li>
+              <li id="loadingStepCrm">正在生成搜索结果...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">海外客户开发平台</p>
+          <h1>Lead CRM</h1>
+          <p class="muted">为海外客户开发团队打造的智能线索管理系统。</p>
+        </div>
+        <nav class="nav-links">
+          <a class="active" href="#">客户搜索</a>
+          <a href="#">客户库</a>
+          <a href="#">开发信</a>
+          <a href="#">群发中心</a>
+        </nav>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div>
+            <h2>真实客户搜索与 CRM 管理</h2>
+            <p class="muted">输入国家、行业和关键词，先生成临时搜索结果，再手动加入长期 CRM。</p>
+          </div>
+          <div class="status-pill" id="statusPill">等待搜索</div>
+        </header>
+
+        <section class="panel search-panel">
+          <div class="panel-title-row">
+            <h3>搜索客户</h3>
+            <button id="searchBtn">开始搜索</button>
+          </div>
+          <div class="form-grid">
+            <label>
+              国家
+              <input id="countryInput" type="text" value="美国" />
+            </label>
+            <label>
+              行业
+              <input id="industryInput" type="text" value="LED" />
+            </label>
+            <label>
+              关键词
+              <input id="keywordInput" type="text" value="manufacturer" />
+            </label>
+          </div>
+          <p class="hint">优先通过真实互联网来源检索企业信息，并保留官网、社交和目录证据；例如：美国 LED / 德国 五金 / 英国 家具</p>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="panel-title-row">
+            <h3>搜索结果</h3>
+            <span class="muted" id="resultCount">0 家客户</span>
+          </div>
+          <div id="searchSummary" class="search-summary" hidden></div>
+          <div id="leadGrid" class="lead-grid"></div>
+        </section>
+
+        <section class="panel enrich-panel">
+          <div class="panel-title-row">
+            <h3>自动联网补充</h3>
+            <div class="panel-actions">
+              <button id="enrichBtn">开始联网补充</button>
+              <button id="exportEnrichBtn">导出 CSV</button>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label>
+              关键词
+              <input id="enrichInput" type="text" value="fashion jewelry" />
+            </label>
+          </div>
+          <div id="enrichResults" class="lead-grid"></div>
+        </section>
+
+        <section class="panel crm-panel">
+          <div class="panel-title-row">
+            <h3>CRM 客户库</h3>
+            <div class="panel-actions">
+              <button id="exportExcelBtn">一键导出客户</button>
+              <button id="exportBtn">导出 CSV</button>
+            </div>
+          </div>
+          <div id="crmFilterBar" class="crm-filter-bar"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>公司</th>
+                <th>行业标签</th>
+                <th>国家</th>
+                <th>客户等级</th>
+                <th>邮箱</th>
+                <th>电话</th>
+                <th>评分</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="crmBody"></tbody>
+          </table>
+        </section>
+
+        <section class="panel detail-panel">
+          <div class="panel-title-row">
+            <h3>客户详情</h3>
+          </div>
+          <div id="detailContent" class="detail-content">点击任一客户卡片查看详情。</div>
+        </section>
+
+        <section class="panel message-panel">
+          <div class="panel-title-row">
+            <h3>生成外联消息</h3>
+          </div>
+          <div class="message-layout">
+            <div class="message-card">
+              <label>语言</label>
+              <select id="languageSelect">
+                <option value="en">English</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+              </select>
+              <label>开发信</label>
+              <textarea id="emailDraft" rows="8"></textarea>
+            </div>
+            <div class="message-card">
+              <label>WhatsApp</label>
+              <textarea id="whatsappDraft" rows="8"></textarea>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
