@@ -23,6 +23,12 @@ const {
   extractEmployeeCount,
   extractSocialLinks,
   collectCompanySignals,
+  calculateIndustryMatchScore,
+  calculateCountryFitScore,
+  calculateCompanyScore,
+  calculateContactCompletenessScore,
+  normalizeIndustryForSearch,
+  INDUSTRY_KEYWORD_LIBRARY,
 } = await import('../server.js');
 
 test('normalizeText trims whitespace and collapses spaces', () => {
@@ -41,11 +47,38 @@ test('extractWebsite finds website', () => {
   assert.equal(extractWebsite('Visit https://example.com now'), 'https://example.com');
 });
 
-test('buildSearchQueries includes the country, industry, and keyword', () => {
-  const queries = buildSearchQueries({ country: '美国', industry: 'LED', keyword: 'supplier' });
-  assert.ok(queries.some((query) => query.includes('美国 LED supplier')));
-  assert.ok(queries.some((query) => query.includes('company')));
-  assert.ok(queries.some((query) => query.includes('manufacturer')));
+test('buildSearchQueries expands country and industry without user keywords', () => {
+  const queries = buildSearchQueries({ country: '美国', industry: 'LED' });
+  assert.equal(queries.length, 20);
+  assert.ok(queries.includes('United States LED manufacturer'));
+  assert.ok(queries.includes('United States Commercial lighting'));
+  assert.ok(queries.every((query) => !query.includes('undefined')));
+});
+
+test('Chinese jewelry product inputs are translated to broad jewelry searches', () => {
+  assert.equal(normalizeIndustryForSearch('珠宝首饰'), 'Jewelry');
+  assert.equal(normalizeIndustryForSearch('耳钉'), 'Jewelry');
+
+  const queries = buildSearchQueries({ country: '英国', industry: '耳钉' });
+  assert.equal(queries.length, 20);
+  assert.ok(queries.includes('United Kingdom Jewelry manufacturer'));
+  assert.ok(queries.includes('United Kingdom Jewellery supplier'));
+  assert.ok(queries.includes('United Kingdom OEM jewelry'));
+  assert.ok(queries.every((query) => !/earrings|stud earrings|bracelet|necklace|ring/i.test(query)));
+});
+
+test('industry keyword library is fixed for V1.2 search categories', () => {
+  ['Jewelry', 'LED Lighting', 'Furniture', 'Auto Parts', 'Packaging', 'Cosmetics'].forEach((industry) => {
+    assert.equal(INDUSTRY_KEYWORD_LIBRARY[industry].length, 20, industry);
+  });
+
+  assert.deepEqual(buildSearchQueries({ country: 'Vietnam', industry: 'Furniture' }).slice(0, 3), [
+    'Vietnam Furniture manufacturer',
+    'Vietnam Furniture supplier',
+    'Vietnam Furniture exporter',
+  ]);
+  assert.ok(buildSearchQueries({ country: 'Germany', industry: 'Auto Parts' }).includes('Germany OEM Auto Parts'));
+  assert.ok(buildSearchQueries({ country: 'Japan', industry: 'Cosmetics' }).includes('Japan Skincare manufacturer'));
 });
 
 test('extractBusiness extracts a concise business summary', () => {
@@ -250,6 +283,40 @@ test('identifyEnterpriseCandidate keeps only enterprise websites that match the 
   }).keep, false);
 });
 
+test('calculateIndustryMatchScore requires strong jewelry relevance before recommendation', () => {
+  assert.ok(calculateIndustryMatchScore({
+    url: 'https://examplejewellery.co.uk',
+    company: 'Example Jewellery Manufacturer',
+    text: 'Wholesale jewellery supplier producing stud earrings, silver jewelry, bracelets, necklaces and rings for retailers.',
+  }, '珠宝首饰', '耳钉') >= 60);
+
+  assert.ok(calculateIndustryMatchScore({
+    url: 'https://datasciencepartners.co.uk',
+    company: 'Data Science Partners',
+    text: 'Software, data science consulting, analytics and IT service for enterprise teams.',
+  }, '珠宝首饰', '耳钉') < 60);
+
+  assert.ok(calculateIndustryMatchScore({
+    url: 'https://xbox.com',
+    company: 'Xbox',
+    text: 'Gaming consoles, Xbox software subscriptions and entertainment.',
+  }, 'jewellery', 'earrings') < 60);
+});
+
+test('calculateCountryFitScore penalizes companies from the wrong country', () => {
+  assert.equal(calculateCountryFitScore({
+    url: 'https://www.essentials-jewelry.com',
+    company: 'Custom Jewelry Manufacturer - Jewellery Manufacturer in India',
+    text: 'Jewellery manufacturer based in Jaipur India with +91 phone number.',
+  }, 'United States'), 0);
+
+  assert.equal(calculateCountryFitScore({
+    url: 'https://www.nf1-jewellery.co.uk',
+    company: 'NF1 Jewellery',
+    text: 'Wholesale jewellery manufacturer in the United Kingdom. Call +44 20 0000 0000.',
+  }, 'United Kingdom'), 100);
+});
+
 test('extractSocialLinks picks up LinkedIn, Facebook and Google Maps URLs', () => {
   const links = extractSocialLinks('Visit https://www.linkedin.com/company/example-factory and https://www.facebook.com/examplefactory and https://www.google.com/maps/place/Example+Factory');
   assert.equal(links.linkedin, 'https://www.linkedin.com/company/example-factory');
@@ -261,7 +328,7 @@ test('collectCompanySignals merges data from contact, about and privacy pages', 
   const signals = collectCompanySignals([
     {
       url: 'https://examplefactory.com/contact',
-      text: 'Contact us at sales@examplefactory.com or call +1 555 010 0000. WhatsApp +1 555 010 0001',
+      text: 'Contact us at sales@examplefactory.com or call +1 555 010 0000. WhatsApp +1 555 010 0001. Jane Doe Sales Manager.',
     },
     {
       url: 'https://examplefactory.com/about',
@@ -277,9 +344,31 @@ test('collectCompanySignals merges data from contact, about and privacy pages', 
   assert.equal(signals.phone, '+1 555 010 0000');
   assert.equal(signals.whatsapp, '+1 555 010 0001');
   assert.equal(signals.contact, 'Jane Doe');
+  assert.equal(signals.contactTitle, 'Sales Manager');
   assert.equal(signals.linkedin, 'https://www.linkedin.com/company/example-factory');
   assert.equal(signals.facebook, 'https://www.facebook.com/examplefactory');
   assert.equal(signals.googleMaps, 'https://www.google.com/maps/place/Example+Factory');
+});
+
+test('company score and contact completeness are separated', () => {
+  const companyOnly = buildRealLead({
+    company: 'Example Furniture Factory',
+    website: 'https://examplefurniture.vn',
+    country: 'Vietnam',
+    product: 'furniture manufacturer and exporter',
+    summary: 'OEM furniture factory producing wood furniture for export buyers.',
+  });
+  const withContact = buildRealLead({
+    ...companyOnly,
+    email: 'sales@examplefurniture.vn',
+    linkedin: 'https://www.linkedin.com/company/example-furniture',
+    contact: 'Jane Doe',
+    contactTitle: 'Export Manager',
+  });
+
+  assert.ok(calculateCompanyScore({ ...companyOnly, industryMatchScore: 90, countryFitScore: 100 }, 'Furniture') >= 70);
+  assert.equal(calculateContactCompletenessScore(companyOnly), 0);
+  assert.ok(calculateContactCompletenessScore(withContact) >= 50);
 });
 
 test('dedupeCandidates merges repeated website domains and keeps the strongest source first', () => {

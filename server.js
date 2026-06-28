@@ -11,11 +11,146 @@ app.use(express.json());
 app.use(express.static('.'));
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 const isTestRun = process.env.NODE_ENV === 'test' || process.env.SKIP_SERVER_START === '1' || process.argv.some((arg) => arg.includes('node:test'));
 const SEARCH_RESULT_LIMIT = 20;
 const FINAL_COMPANY_LIMIT = 20;
-const BUILD_CANDIDATE_LIMIT = 50;
+const BUILD_CANDIDATE_LIMIT = 80;
+
+export const INDUSTRY_KEYWORD_LIBRARY = {
+  Jewelry: [
+    'Jewelry manufacturer',
+    'Jewelry supplier',
+    'Jewelry wholesaler',
+    'Jewelry exporter',
+    'Jewelry factory',
+    'OEM jewelry',
+    'Fashion jewelry',
+    'Silver jewelry',
+    'Gold jewelry',
+    'Custom jewelry',
+    'Jewelry company',
+    'Jewelry distributor',
+    'Wholesale jewelry',
+    'Wholesale jewellery',
+    'Jewellery manufacturer',
+    'Jewellery supplier',
+    'Jewellery wholesaler',
+    'Jewellery exporter',
+    'Jewellery factory',
+    'Fashion accessories supplier',
+  ],
+  'LED Lighting': [
+    'LED manufacturer',
+    'LED supplier',
+    'LED lighting manufacturer',
+    'LED lighting supplier',
+    'Commercial lighting',
+    'Industrial lighting',
+    'Lighting factory',
+    'Lighting exporter',
+    'LED fixture manufacturer',
+    'LED lamp supplier',
+    'Lighting solutions company',
+    'OEM LED lighting',
+    'ODM LED lighting',
+    'LED distributor',
+    'Architectural lighting',
+    'Outdoor LED lighting',
+    'Indoor LED lighting',
+    'Commercial LED lighting',
+    'Industrial LED lighting',
+    'LED lighting company',
+  ],
+  Furniture: [
+    'Furniture manufacturer',
+    'Furniture supplier',
+    'Furniture exporter',
+    'Furniture factory',
+    'Furniture wholesaler',
+    'Furniture company',
+    'Furniture distributor',
+    'OEM furniture',
+    'Custom furniture',
+    'Wood furniture manufacturer',
+    'Commercial furniture supplier',
+    'Hotel furniture manufacturer',
+    'Office furniture supplier',
+    'Home furniture manufacturer',
+    'Outdoor furniture supplier',
+    'Furniture production',
+    'Furniture workshop',
+    'Furniture trading company',
+    'Furniture products',
+    'Furniture catalog',
+  ],
+  'Auto Parts': [
+    'Auto Parts manufacturer',
+    'Auto Parts supplier',
+    'Auto Parts exporter',
+    'OEM Auto Parts',
+    'Auto Parts factory',
+    'Auto Parts distributor',
+    'Automotive parts manufacturer',
+    'Automotive parts supplier',
+    'Aftermarket parts supplier',
+    'Vehicle parts distributor',
+    'Spare parts supplier',
+    'Car parts manufacturer',
+    'Car parts supplier',
+    'Automotive components manufacturer',
+    'OEM automotive parts',
+    'Auto components exporter',
+    'Automotive aftermarket supplier',
+    'Engine parts supplier',
+    'Brake parts supplier',
+    'Suspension parts supplier',
+  ],
+  Packaging: [
+    'Packaging manufacturer',
+    'Packaging supplier',
+    'Packaging exporter',
+    'Packaging factory',
+    'Packaging wholesaler',
+    'Custom packaging',
+    'OEM packaging',
+    'Paper packaging supplier',
+    'Plastic packaging manufacturer',
+    'Food packaging supplier',
+    'Cosmetic packaging supplier',
+    'Flexible packaging manufacturer',
+    'Packaging company',
+    'Packaging distributor',
+    'Printed packaging supplier',
+    'Retail packaging supplier',
+    'Sustainable packaging supplier',
+    'Packaging products',
+    'Packaging solutions company',
+    'Packaging production',
+  ],
+  Cosmetics: [
+    'Cosmetics manufacturer',
+    'Beauty supplier',
+    'Skincare manufacturer',
+    'Cosmetics supplier',
+    'Cosmetics exporter',
+    'Cosmetics factory',
+    'OEM cosmetics',
+    'Private label cosmetics',
+    'Beauty products manufacturer',
+    'Skincare supplier',
+    'Makeup manufacturer',
+    'Personal care manufacturer',
+    'Cosmetic products supplier',
+    'Cosmetics company',
+    'Cosmetics distributor',
+    'Beauty products exporter',
+    'Skincare factory',
+    'Natural cosmetics manufacturer',
+    'Cosmetic formulation company',
+    'Beauty brand manufacturer',
+  ],
+};
 
 export function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -69,37 +204,46 @@ export function extractWebsite(text) {
   return match ? match[0] : '';
 }
 
-export function buildSearchQueries({ country, industry, keyword }) {
+export function normalizeIndustryForSearch(industry) {
+  const value = normalizeText(industry).toLowerCase();
+  if (/(珠宝|首饰|饰品|耳钉|耳环|耳饰|手镯|手链|项链|戒指|jewelry|jewellery|earring|bracelet|necklace|ring|accessor)/i.test(value)) {
+    return 'Jewelry';
+  }
+  if (/(led|lighting|灯|照明|lamp|fixture|luminair)/i.test(value)) {
+    return 'LED Lighting';
+  }
+  if (/(auto|automotive|vehicle|spare|parts|汽配|汽车配件|零部件)/i.test(value)) {
+    return 'Auto Parts';
+  }
+  if (/(furniture|家具|家居|chair|table|cabinet|sofa)/i.test(value)) {
+    return 'Furniture';
+  }
+  if (/(packaging|package|packing|包装|包裝|box|carton|bag|label)/i.test(value)) {
+    return 'Packaging';
+  }
+  if (/(cosmetic|cosmetics|beauty|skincare|makeup|化妆品|化妝品|美妆|美妝|护肤|護膚)/i.test(value)) {
+    return 'Cosmetics';
+  }
+  return normalizeText(industry);
+}
+
+export function buildSearchQueries({ country, industry }) {
   const normalizedCountry = normalizeCountryForSearch(country);
-  const rawCountry = normalizeText(country);
-  const normalizedIndustry = normalizeText(industry);
-  const normalizedKeyword = normalizeText(keyword);
-  const base = [normalizedCountry, normalizedIndustry, normalizedKeyword].filter(Boolean).join(' ');
-  const rawBase = [rawCountry, normalizedIndustry, normalizedKeyword].filter(Boolean).join(' ');
-  const haystack = `${normalizedIndustry} ${normalizedKeyword}`.toLowerCase();
-  const productTerms = new Set([normalizedIndustry, normalizedKeyword].filter(Boolean));
+  const normalizedIndustry = normalizeIndustryForSearch(industry);
+  const countryPrefix = normalizeText(normalizedCountry);
+  const libraryTerms = INDUSTRY_KEYWORD_LIBRARY[normalizedIndustry] || [
+    `${normalizedIndustry} manufacturer`,
+    `${normalizedIndustry} supplier`,
+    `${normalizedIndustry} wholesaler`,
+    `${normalizedIndustry} exporter`,
+    `${normalizedIndustry} factory`,
+    `OEM ${normalizedIndustry}`,
+    `${normalizedIndustry} distributor`,
+    `${normalizedIndustry} company`,
+  ];
+  const expanded = libraryTerms.map((term) => `${countryPrefix} ${term}`);
 
-  if (/(jewelry|jewellery|bracelet|accessor|珠宝|首饰|饰品|耳钉|耳环|手链)/i.test(haystack)) {
-    ['fashion jewelry', 'jewelry', 'bracelet', 'wholesale jewelry', 'OEM jewelry', 'handmade jewelry', 'silver jewelry', 'fashion accessories'].forEach((term) => productTerms.add(term));
-  }
-  if (/(led|lighting|lamp|fixture|luminair)/i.test(haystack)) {
-    ['LED lighting', 'commercial LED lighting', 'industrial LED lighting', 'LED fixture', 'LED lamp', 'lighting solutions'].forEach((term) => productTerms.add(term));
-  }
-  if (/(auto|automotive|vehicle|spare|parts|aftermarket)/i.test(haystack)) {
-    ['auto parts', 'automotive parts', 'vehicle parts', 'aftermarket parts', 'spare parts', 'OEM automotive parts'].forEach((term) => productTerms.add(term));
-  }
-
-  const buyerTerms = ['manufacturer', 'supplier', 'factory', 'exporter', 'wholesale supplier', 'OEM manufacturer', 'ODM manufacturer', 'products contact'];
-  const expanded = [...productTerms].flatMap((term) => buyerTerms.map((buyerTerm) => `${normalizedCountry} ${term} ${buyerTerm}`));
-  return [...new Set([
-    base,
-    rawBase,
-    `${base} company`,
-    `${base} manufacturer`,
-    `${base} supplier`,
-    `${rawBase} supplier`,
-    ...expanded,
-  ].map(normalizeText).filter(Boolean))].slice(0, 24);
+  return [...new Set(expanded.map(normalizeText).filter(Boolean))].slice(0, 20);
 }
 
 function normalizeCountryForSearch(country) {
@@ -160,14 +304,20 @@ function cleanBusinessText(value) {
 function inferBusinessProfile(text, fallback = '') {
   const cleaned = cleanBusinessText(`${text || ''} ${fallback || ''}`);
   const haystack = cleaned.toLowerCase();
-  if (/(led|lighting|lamp|fixture|luminair|illumination)/i.test(haystack)) {
-    return 'commercial and industrial LED lighting solutions, including indoor and outdoor fixtures, lamps, controls, and project lighting products';
-  }
   if (/(jewelry|jewellery|bracelet|necklace|ring|accessor)/i.test(haystack)) {
     return 'fashion jewelry, custom pieces, wholesale accessories, and retail-ready jewelry products';
   }
+  if (/(led|lighting|lamp|fixture|luminair|illumination)/i.test(haystack)) {
+    return 'commercial and industrial LED lighting solutions, including indoor and outdoor fixtures, lamps, controls, and project lighting products';
+  }
   if (/(furniture|chair|table|cabinet|sofa|wood)/i.test(haystack)) {
     return 'furniture, fixtures, and interior product supply for commercial or retail buyers';
+  }
+  if (/(packaging|package|carton|box|bag|label|pouch|container)/i.test(haystack)) {
+    return 'custom packaging, retail packaging, printed boxes, bags, labels, and packaging solutions for brands and distributors';
+  }
+  if (/(cosmetic|cosmetics|skincare|beauty|makeup|personal care|lotion|cream|serum)/i.test(haystack)) {
+    return 'cosmetics, skincare, beauty products, personal care items, and private-label product manufacturing';
   }
   if (/(hardware|tool|fastener|industrial|component|engineering)/i.test(haystack)) {
     return 'industrial hardware, components, engineering products, and related supply items';
@@ -184,7 +334,7 @@ export function extractBusiness(text, fallback = '') {
   const candidates = sentences
     .map(cleanBusinessText)
     .filter((sentence) => sentence.length >= 20)
-    .filter((sentence) => /(manufactur|supplier|provider|solutions|products|services|systems|design|lighting|furniture|hardware|industrial|engineering|wholesale|export|trading|components|assembly|packaging)/i.test(sentence))
+    .filter((sentence) => /(manufactur|supplier|provider|solutions|products|services|systems|design|lighting|furniture|hardware|industrial|engineering|wholesale|export|trading|components|assembly|packaging|cosmetic|skincare|beauty|automotive|auto parts)/i.test(sentence))
     .filter((sentence) => !/(foreign investors|national flag|vietnamese|declaration|copyright|privacy|terms|menu|seo|skip to content)/i.test(sentence));
   return inferBusinessProfile(candidates[0] || cleaned, fallback).slice(0, 220);
 }
@@ -248,6 +398,7 @@ const BLOCKED_HOSTS = [
   'alibaba.com',
   'globalsources.com',
   'importyeti.com',
+  'supplierscentral.com',
   'united.com',
   'expedia.com',
   'tripadvisor.com',
@@ -255,7 +406,18 @@ const BLOCKED_HOSTS = [
   'kayak.com',
   'baidu.com',
   'google.com',
+  'google.co.uk',
+  'google.com.au',
+  'google.co.jp',
+  'google.de',
   'dingtalk.com',
+  'apple.com',
+  'apps.apple.com',
+  'microsoft.com',
+  'mozilla.org',
+  'yahoo.co.jp',
+  'yahoo-net.jp',
+  'gizmodo.com',
   'skyscanner.com.hk',
   'vnexpress.net',
   'vietnamnet.vn',
@@ -317,8 +479,27 @@ const NON_ENTERPRISE_CONTENT_PATTERNS = [
   /前\s*\d+\s*名/i,
   /(?:新闻|新聞|报告|報告|排行榜|名单|名單|旅游指南|旅行指南|个人网站|個人網站)/i,
 ];
+const UNRELATED_BUSINESS_PATTERNS = [
+  /\bsoftware\b/i,
+  /\bdata science\b/i,
+  /\bdata analytics\b/i,
+  /\bit service\b/i,
+  /\binformation technology\b/i,
+  /\bgaming\b/i,
+  /\bxbox\b/i,
+  /\beducation\b/i,
+  /\bgovernment\b/i,
+  /\bnews\b/i,
+  /\bblog\b/i,
+  /\bdirectory\b/i,
+  /\bforum\b/i,
+  /\bagency\b/i,
+  /\bconsulting\b/i,
+];
 
 function isBlockedHost(host) {
+  if (/^google\.[a-z.]+$/i.test(host) || /^www\.google\.[a-z.]+$/i.test(host)) return true;
+  if (/^(www\.)?youtube\.[a-z.]+$/i.test(host)) return true;
   return BLOCKED_HOSTS.some((blocked) => host === blocked || host.endsWith(`.${blocked}`));
 }
 
@@ -347,6 +528,10 @@ function getTopicTerms(topic) {
     automotive: ['auto', 'automotive', 'vehicle', 'parts', 'component', 'components', 'aftermarket', 'spare'],
     parts: ['parts', 'component', 'components', 'aftermarket', 'spare', 'automotive', 'vehicle'],
     furniture: ['furniture', 'chair', 'table', 'cabinet', 'sofa', 'wood'],
+    packaging: ['packaging', 'package', 'box', 'carton', 'bag', 'label', 'pouch', 'container'],
+    cosmetics: ['cosmetics', 'cosmetic', 'beauty', 'skincare', 'makeup', 'personal', 'care'],
+    cosmetic: ['cosmetics', 'cosmetic', 'beauty', 'skincare', 'makeup', 'personal', 'care'],
+    skincare: ['cosmetics', 'cosmetic', 'beauty', 'skincare', 'makeup', 'personal', 'care'],
     hardware: ['hardware', 'tool', 'fastener', 'component', 'industrial'],
   };
   const baseTerms = normalizeText(topic)
@@ -354,6 +539,105 @@ function getTopicTerms(topic) {
     .split(/[^a-z0-9]+/)
     .filter((term) => term.length >= 3 && !['and', 'the', 'for', 'with', 'company', 'manufacturer', 'supplier', 'factory', 'exporter', 'oem'].includes(term));
   return [...new Set(baseTerms.flatMap((term) => [term, ...(aliases[term] || [])]))];
+}
+
+function getIndustryMatchProfile(industry = '', keyword = '') {
+  const input = `${industry} ${keyword}`.toLowerCase();
+  if (/(jewelry|jewellery|earring|bracelet|necklace|ring|accessor|珠宝|首饰|饰品|耳钉|耳环|手镯|手链|项链|戒指)/i.test(input)) {
+    return {
+      type: 'jewellery',
+      strongTerms: [
+        'jewelry',
+        'jewellery',
+        'earrings',
+        'stud earrings',
+        'fashion jewelry',
+        'fashion jewellery',
+        'silver jewelry',
+        'gold jewelry',
+        'bracelet',
+        'necklace',
+        'ring',
+        'accessories',
+        'wholesale jewelry',
+        'wholesale jewellery',
+        'jewellery supplier',
+        'jewellery manufacturer',
+        'jewelry supplier',
+        'jewelry manufacturer',
+        'oem jewelry',
+        'oem jewellery',
+      ],
+      preferredTerms: [
+        'jewelry brand',
+        'jewellery brand',
+        'wholesaler',
+        'manufacturer',
+        'supplier',
+        'factory',
+        'exporter',
+        'oem',
+        'odm',
+      ],
+    };
+  }
+  if (/(led|lighting|lamp|fixture|luminair|illumination)/i.test(input)) {
+    return {
+      type: 'lighting',
+      strongTerms: ['led', 'lighting', 'led lighting', 'lamp', 'fixture', 'luminaire', 'illumination'],
+      preferredTerms: ['manufacturer', 'supplier', 'factory', 'industrial', 'commercial', 'oem', 'lighting solutions'],
+    };
+  }
+  if (/(furniture|chair|table|cabinet|sofa|wood)/i.test(input)) {
+    return {
+      type: 'furniture',
+      strongTerms: ['furniture manufacturer', 'furniture supplier', 'furniture factory', 'furniture exporter', 'wood furniture', 'office furniture', 'hotel furniture', 'furniture products', 'furniture company'],
+      preferredTerms: ['manufacturer', 'supplier', 'factory', 'wholesaler', 'exporter', 'oem', 'custom'],
+    };
+  }
+  if (/(auto parts|automotive|vehicle|spare|parts|aftermarket|component)/i.test(input)) {
+    return {
+      type: 'auto-parts',
+      strongTerms: ['auto parts', 'automotive parts', 'vehicle parts', 'spare parts', 'aftermarket parts', 'car parts', 'automotive components', 'auto components', 'oem automotive parts'],
+      preferredTerms: ['manufacturer', 'supplier', 'factory', 'exporter', 'oem', 'aftermarket', 'distributor'],
+    };
+  }
+  if (/(packaging|package|carton|box|bag|label|pouch|container)/i.test(input)) {
+    return {
+      type: 'packaging',
+      strongTerms: ['packaging', 'package', 'carton', 'box', 'bag', 'label', 'pouch', 'container', 'printed packaging'],
+      preferredTerms: ['manufacturer', 'supplier', 'factory', 'exporter', 'custom', 'oem', 'solutions'],
+    };
+  }
+  if (/(cosmetic|cosmetics|beauty|skincare|makeup|personal care)/i.test(input)) {
+    return {
+      type: 'cosmetics',
+      strongTerms: ['cosmetics', 'cosmetic', 'beauty', 'skincare', 'makeup', 'personal care', 'cream', 'serum', 'lotion'],
+      preferredTerms: ['manufacturer', 'supplier', 'factory', 'exporter', 'oem', 'private label', 'formulation'],
+    };
+  }
+  return {
+    type: 'general',
+    strongTerms: getTopicTerms(`${industry} ${keyword}`),
+    preferredTerms: ['manufacturer', 'supplier', 'factory', 'exporter', 'oem', 'odm', 'wholesale'],
+  };
+}
+
+export function calculateIndustryMatchScore({ url = '', company = '', text = '' }, industry = '', keyword = '') {
+  const profile = getIndustryMatchProfile(industry, keyword);
+  const haystack = normalizeText(`${company} ${url} ${text}`).toLowerCase();
+  if (!profile.strongTerms.length) return 70;
+  if (UNRELATED_BUSINESS_PATTERNS.some((pattern) => pattern.test(haystack))) return 0;
+
+  let score = 0;
+  const strongMatches = profile.strongTerms.filter((term) => textContainsTerm(haystack, term.toLowerCase()));
+  if (strongMatches.length > 0) score += 55;
+  if (strongMatches.length >= 2) score += 15;
+  if (strongMatches.length >= 4) score += 10;
+  if (profile.preferredTerms.some((term) => textContainsTerm(haystack, term.toLowerCase()))) score += 15;
+  if (/\b(?:manufacturer|supplier|factory|wholesale|wholesaler|exporter|oem|odm)\b/i.test(haystack)) score += 5;
+
+  return Math.max(0, Math.min(100, score));
 }
 
 function textContainsTerm(text, term) {
@@ -379,6 +663,37 @@ function getCountrySignals(country) {
 
 function hasCountryMismatch(text) {
   return /\b(?:bangladesh|india|china|pakistan|nepal|sri lanka)\b/i.test(text) || /(?:\+880|\+91|\+86|\+92|\+977|\+94)/.test(text);
+}
+
+export function calculateCountryFitScore({ url = '', company = '', text = '' }, country = '') {
+  const target = normalizeCountryForSearch(country).toLowerCase();
+  const identityText = normalizeText(`${company} ${url}`).toLowerCase();
+  const pageText = normalizeText(text).toLowerCase();
+  const countryGroups = [
+    { key: 'united states', signals: ['united states', 'usa', 'u.s.', '.us', '+1'] },
+    { key: 'united kingdom', signals: ['united kingdom', 'uk', '.co.uk', '+44'] },
+    { key: 'vietnam', signals: ['vietnam', 'viet nam', '.vn', '+84', 'hanoi', 'ho chi minh', 'saigon'] },
+    { key: 'germany', signals: ['germany', 'deutschland', '.de', '+49'] },
+    { key: 'japan', signals: ['japan', '.jp', '+81', 'tokyo', 'osaka'] },
+    { key: 'india', signals: ['india', '.in', '+91'] },
+    { key: 'china', signals: ['china', '.cn', '+86'] },
+    { key: 'bangladesh', signals: ['bangladesh', '.bd', '+880'] },
+    { key: 'pakistan', signals: ['pakistan', '.pk', '+92'] },
+  ];
+  const targetGroup = countryGroups.find((group) => group.key === target || group.signals.includes(target));
+  const targetSignals = targetGroup?.signals || getCountrySignals(country);
+  const hasTargetSignal = targetSignals.some((signal) => identityText.includes(signal) || pageText.includes(signal));
+  const identityMismatch = countryGroups
+    .filter((group) => group.key !== targetGroup?.key)
+    .some((group) => group.signals.some((signal) => identityText.includes(signal)));
+  const pageMismatch = countryGroups
+    .filter((group) => group.key !== targetGroup?.key)
+    .some((group) => group.signals.some((signal) => pageText.includes(signal)));
+
+  if (identityMismatch) return 0;
+  if (hasTargetSignal) return 100;
+  if (pageMismatch && !hasTargetSignal) return 35;
+  return 60;
 }
 
 export function identifyEnterpriseCandidate({ url, text = '', company = '', topic = '', country = '' }) {
@@ -497,16 +812,18 @@ export function dedupeCandidates(candidates) {
   });
 }
 
-function scoreOfficialCandidate(candidate) {
+function scoreOfficialCandidate(candidate, industry = '') {
   try {
     const parsed = new URL(candidate.url || '');
     const path = parsed.pathname.replace(/\/+$/, '');
     const pathDepth = path.split('/').filter(Boolean).length;
     const source = candidate.source || '';
     const haystack = `${candidate.company || ''} ${candidate.url || ''}`.toLowerCase();
+    const topicTerms = getTopicTerms(industry);
 
     let score = 0;
     if (source === 'Official Website Seed') score += 1000;
+    if (topicTerms.some((term) => textContainsTerm(haystack, term))) score += 160;
     if (pathDepth === 0) score += 120;
     if (pathDepth === 1) score += 40;
     if (PREFERRED_TERMS.some((term) => haystack.includes(term))) score += 20;
@@ -519,10 +836,10 @@ function scoreOfficialCandidate(candidate) {
   }
 }
 
-export function selectOfficialCandidates(candidates, limit = 12) {
+export function selectOfficialCandidates(candidates, limit = 12, industry = '') {
   return candidates
     .filter((candidate) => isRealCompanyWebsite(candidate.url))
-    .map((candidate, index) => ({ candidate, index, score: scoreOfficialCandidate(candidate) }))
+    .map((candidate, index) => ({ candidate, index, score: scoreOfficialCandidate(candidate, industry) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, limit)
     .map((item) => item.candidate);
@@ -602,7 +919,9 @@ export function buildOutreachBundle(lead) {
 }
 
 function extractContactName(text) {
-  const cleanPersonName = (value) => normalizeText(value).replace(/^(?:Meet|Mr|Mrs|Ms|Dr)\s+/i, '');
+  const cleanPersonName = (value) => normalizeText(value)
+    .replace(/^(?:Meet|Mr|Mrs|Ms|Dr)\s+/i, '')
+    .replace(/\s+(?:Sales|Export|Purchasing|Procurement|Marketing|Business|Development|General|Manager|Director|CEO|Owner|Founder|President|Officer|Head)$/i, '');
   const isGenericLabel = (value) => /^(?:Contact Us|About Us|Call Us|Email Us|Customer Service|Home About|Content Home|Main Menu|Search Home|Our Team|Register Login|Login Register|Fashion Jewelry Manufacturer|Contact Us We|The Viet|Shop Workshops For|About Us Our|Close Skip|Any Queries)$/i.test(normalizeText(value));
   const candidates = String(text || '').split(/\n|\.|;|,|\|/).map(normalizeText).filter(Boolean);
   const namedRole = String(text || '').match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b[^.]{0,50}\b(?:founder|owner|ceo|director|manager|president|head of sales)\b/i)
@@ -615,6 +934,11 @@ function extractContactName(text) {
     .map((line) => line.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/)?.[1] || '')
     .find((name) => name && !isGenericLabel(name));
   return cleanPersonName(explicit || '');
+}
+
+function extractContactTitle(text) {
+  const match = String(text || '').match(/\b(?:founder|owner|ceo|chief executive officer|director|sales manager|export manager|purchasing manager|procurement manager|head of sales|business development manager|marketing manager|general manager)\b/i);
+  return match ? normalizeText(match[0]) : '';
 }
 
 function extractWhatsApp(text) {
@@ -637,6 +961,7 @@ export function collectCompanySignals(pages) {
     phone: '',
     whatsapp: '',
     contact: '',
+    contactTitle: '',
     linkedin: '',
     facebook: '',
     instagram: '',
@@ -651,6 +976,7 @@ export function collectCompanySignals(pages) {
     if (!signals.phone) signals.phone = extractPhone(text);
     if (!signals.whatsapp) signals.whatsapp = extractWhatsApp(text);
     if (!signals.contact) signals.contact = extractContactName(text);
+    if (!signals.contactTitle) signals.contactTitle = extractContactTitle(text);
     if (!signals.linkedin) signals.linkedin = socialLinks.linkedin;
     if (!signals.facebook) signals.facebook = socialLinks.facebook;
     if (!signals.instagram) signals.instagram = socialLinks.instagram;
@@ -688,14 +1014,42 @@ function businessMatchesTopic(lead, industry = '', keyword = '') {
   return topicTerms.some((term) => textContainsTerm(haystack, term));
 }
 
+function hasContactSignal(lead) {
+  return Boolean(lead.email || lead.phone || lead.whatsapp || lead.linkedin || lead.contact);
+}
+
+export function calculateCompanyScore(lead, industry = '', keyword = '') {
+  let score = 0;
+  const countryFitScore = lead.countryFitScore ?? 60;
+  if (lead.website && isRealCompanyWebsite(lead.website)) score += 25;
+  if (countryFitScore >= 80) score += 18;
+  else if (countryFitScore >= 50) score += 8;
+  if (lead.industryMatchScore) score += Math.round(lead.industryMatchScore * 0.25);
+  if ((lead.industryMatchScore || 0) >= 50 || businessMatchesTopic(lead, industry, keyword)) score += 12;
+  if (lead.product && lead.product.length > 20) score += 10;
+  if (/\b(?:export|exporter|global|international|worldwide|overseas)\b/i.test(`${lead.product || ''} ${lead.summary || ''}`)) score += 8;
+  if (/\b(?:oem|odm|private label|custom|factory|manufacturer)\b/i.test(`${lead.company || ''} ${lead.product || ''} ${lead.summary || ''}`)) score += 7;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function calculateContactCompletenessScore(lead) {
+  let score = 0;
+  if (lead.email) score += 30;
+  if (lead.phone) score += 20;
+  if (lead.whatsapp) score += 20;
+  if (lead.linkedin) score += 15;
+  if (lead.contact) score += 10;
+  if (lead.contactTitle) score += 5;
+  if (lead.facebook || lead.instagram || lead.googleMaps || lead.address) score += 5;
+  return Math.max(0, Math.min(100, score));
+}
+
 function gradeLead(lead, industry = '', keyword = '') {
   const hasWebsite = Boolean(lead.website);
-  const hasEmail = Boolean(lead.email);
-  const hasPhone = Boolean(lead.phone || lead.whatsapp);
-  const matchesBusiness = businessMatchesTopic(lead, industry, keyword);
-  if (hasWebsite && hasEmail && hasPhone && matchesBusiness) return 'A';
-  if (hasWebsite && hasEmail && matchesBusiness) return 'B';
-  if (hasWebsite && hasPhone && matchesBusiness) return 'C';
+  const matchesBusiness = (lead.industryMatchScore || 0) >= 50 || businessMatchesTopic(lead, industry, keyword);
+  if (hasWebsite && matchesBusiness && hasContactSignal(lead)) return 'A';
+  if (hasWebsite && matchesBusiness) return 'B';
+  if (hasWebsite) return 'C';
   return 'D';
 }
 
@@ -706,39 +1060,60 @@ function gradeRank(grade) {
 function calculateAIRecommendationScore(lead, industry = '', keyword = '') {
   const urlText = `${lead.website || ''} ${lead.company || ''}`.toLowerCase();
   const businessText = `${lead.product || ''} ${lead.summary || ''}`.toLowerCase();
-  let score = 0;
+  const identityTopicTerms = getTopicTerms(industry);
+  const identityMatchesTopic = identityTopicTerms.some((term) => textContainsTerm(urlText, term));
+  let score = Math.round((lead.companyScore ?? calculateCompanyScore(lead, industry, keyword)) * 0.7)
+    + Math.round((lead.contactCompletenessScore ?? calculateContactCompletenessScore(lead)) * 0.3);
+  const countryFitScore = lead.countryFitScore ?? 60;
 
-  if (lead.website && isRealCompanyWebsite(lead.website)) score += 25;
-  if (/\b(?:co\.|ltd|limited|inc|llc|gmbh|corp|corporation|company|factory|manufacturer|supplier|exporter|industrial|lighting|jewelry|automotive|parts)\b/i.test(`${lead.company} ${businessText}`)) score += 10;
-  if (businessMatchesTopic(lead, industry, keyword)) score += 25;
-  if (lead.product && lead.product.length > 20) score += 10;
-  if (lead.email) score += 10;
-  if (lead.phone || lead.whatsapp) score += 8;
-  if (lead.linkedin) score += 6;
-  if (lead.facebook || lead.instagram) score += 3;
-  if (lead.foundedYear || lead.employeeSize || lead.address || lead.city) score += 3;
+  if (countryFitScore <= 20) score -= 35;
+  else if (countryFitScore < 50) score -= 15;
+  if ((lead.industryMatchScore || 0) < 30) score -= 45;
   if (/official|seed|google|bing|duckduckgo/i.test(lead.source || '')) score += 2;
+  if (lead.source !== 'Official Website Seed' && identityTopicTerms.length > 0 && !identityMatchesTopic) score -= 35;
   if (/directory|list|top|news|blog|article|wiki|travel|tourism/i.test(`${urlText} ${businessText}`)) score -= 20;
 
   return Math.max(0, Math.min(100, score));
 }
 
+function buildAIRecommendationReason(lead, industry = '', keyword = '') {
+  const reasons = [];
+  const businessText = `${lead.product || ''} ${lead.summary || ''}`.toLowerCase();
+  if (lead.website && isRealCompanyWebsite(lead.website)) reasons.push('官网真实');
+  if ((lead.countryFitScore ?? 60) >= 80) reasons.push('国家匹配');
+  if ((lead.industryMatchScore || 0) >= 70 || businessMatchesTopic(lead, industry, keyword)) reasons.push('主营业务匹配');
+  if (lead.product) reasons.push('主营产品已识别');
+  if (lead.email && (lead.phone || lead.whatsapp)) reasons.push('联系方式完整');
+  else if (lead.email || lead.phone || lead.whatsapp) reasons.push('已有公开联系方式');
+  if (/\b(?:export|exporter|global|international|worldwide|overseas)\b/i.test(businessText)) reasons.push('具备出口/国际业务信号');
+  if (/\b(?:oem|odm|private label|custom|factory|manufacturer)\b/i.test(`${lead.company || ''} ${businessText}`)) reasons.push('具备OEM/制造能力信号');
+  if (lead.linkedin) reasons.push('LinkedIn可验证');
+  if (lead.foundedYear || lead.employeeSize || lead.address || lead.city) reasons.push('公司规模或地址信息可验证');
+  return `${reasons.join('，') || '官网可验证，具备潜在开发价值'}。建议今天优先联系。`;
+}
+
 function withLeadGrade(lead, industry = '', keyword = '') {
-  const product = businessMatchesTopic(lead, industry, keyword)
-    ? lead.product
-    : inferBusinessProfile(`${industry} ${keyword}`, lead.product || `${industry} ${keyword}`);
+  const matchedTopic = (lead.industryMatchScore || 0) >= 50 || businessMatchesTopic(lead, industry, keyword);
+  const product = matchedTopic
+    ? (lead.product || inferBusinessProfile(`${industry} ${keyword}`, `${industry} ${keyword}`))
+    : lead.product;
   const enrichedLead = {
     ...lead,
     product,
+    industryMatchScore: lead.industryMatchScore || calculateIndustryMatchScore({ url: lead.website, company: lead.company, text: `${lead.product || ''} ${lead.summary || ''}` }, industry, keyword),
+    countryFitScore: lead.countryFitScore ?? calculateCountryFitScore({ url: lead.website, company: lead.company, text: `${lead.product || ''} ${lead.summary || ''}` }, lead.country),
   };
+  enrichedLead.companyScore = lead.companyScore ?? calculateCompanyScore(enrichedLead, industry, keyword);
+  enrichedLead.contactCompletenessScore = lead.contactCompletenessScore ?? calculateContactCompletenessScore(enrichedLead);
   return {
     ...enrichedLead,
     grade: gradeLead(enrichedLead, industry, keyword),
     aiRecommendationScore: calculateAIRecommendationScore(enrichedLead, industry, keyword),
+    recommendation: buildAIRecommendationReason(enrichedLead, industry, keyword),
   };
 }
 
-export function buildRealLead({ company, website, country, city = '', email = '', phone = '', whatsapp = '', product = '', summary = '', source = '', sourceUrl = '', contact = '', linkedin = '', facebook = '', instagram = '', googleMaps = '', address = '', foundedYear = '', employeeSize = '' }) {
+export function buildRealLead({ company, website, country, city = '', email = '', phone = '', whatsapp = '', product = '', summary = '', source = '', sourceUrl = '', contact = '', contactTitle = '', linkedin = '', facebook = '', instagram = '', googleMaps = '', address = '', foundedYear = '', employeeSize = '' }) {
   return {
     company: normalizeText(company || ''),
     website: normalizeText(website || ''),
@@ -752,6 +1127,7 @@ export function buildRealLead({ company, website, country, city = '', email = ''
     source: normalizeText(source || ''),
     sourceUrl: normalizeText(sourceUrl || ''),
     contact: normalizeText(contact || extractContactName(summary || '')),
+    contactTitle: normalizeText(contactTitle || extractContactTitle(summary || '')),
     linkedin: normalizeText(linkedin || ''),
     facebook: normalizeText(facebook || ''),
     instagram: normalizeText(instagram || ''),
@@ -834,11 +1210,24 @@ async function buildLeadFromSearchCandidate(candidate, country, industry, keywor
     const city = extractCity(text);
     const foundedYear = extractFoundedYear(text);
     const employeeSize = extractEmployeeCount(text);
-    const product = extractBusiness(text, keyword);
+    const product = extractBusiness(text, industry);
     const summary = buildCompanySummary(companyName, product, country || extractCountry(text));
+    const industryMatchScore = candidate.source === 'Official Website Seed'
+      ? Math.max(90, calculateIndustryMatchScore({ url: candidate.url, company: companyName, text }, industry, keyword))
+      : calculateIndustryMatchScore({ url: candidate.url, company: companyName, text }, industry, keyword);
+    const countryFitScore = candidate.source === 'Official Website Seed'
+      ? Math.max(100, calculateCountryFitScore({ url: candidate.url, company: companyName, text }, country))
+      : calculateCountryFitScore({ url: candidate.url, company: companyName, text }, country);
     const sitePages = await crawlCompanySite(cleanUrl(candidate.url));
-    let signals = collectCompanySignals(sitePages);
-    let lead = buildRealLead({
+    let signals = await discoverContactSignals({
+      company: companyName,
+      website: cleanUrl(candidate.url),
+      country,
+      sitePages,
+      fallbackText: `${text}\n${$$.root().html()}`,
+    });
+    let lead = {
+      ...buildRealLead({
       company: companyName,
       website: cleanUrl(candidate.url),
       country,
@@ -848,6 +1237,8 @@ async function buildLeadFromSearchCandidate(candidate, country, industry, keywor
       whatsapp: signals.whatsapp || extractWhatsApp(text),
       product,
       summary,
+      industryMatchScore,
+      countryFitScore,
       source: candidate.source,
       sourceUrl: candidate.sourceUrl,
       linkedin: signals.linkedin || socialLinks.linkedin,
@@ -858,7 +1249,11 @@ async function buildLeadFromSearchCandidate(candidate, country, industry, keywor
       foundedYear,
       employeeSize,
       contact: signals.contact || extractContactName(text),
-    });
+      contactTitle: signals.contactTitle || extractContactTitle(text),
+      }),
+      industryMatchScore,
+      countryFitScore,
+    };
     const identity = identifyEnterpriseCandidate({
       url: candidate.url,
       text,
@@ -870,35 +1265,8 @@ async function buildLeadFromSearchCandidate(candidate, country, industry, keywor
       lead.company &&
       lead.company !== '未知公司' &&
       isRealCompanyWebsite(candidate.url) &&
-      !['not-real-company-website', 'blocked-path', 'file-url', 'non-enterprise-identity', 'non-company-content', 'recruiting-page'].includes(identity.reason)
+      !['not-real-company-website', 'blocked-path', 'file-url', 'non-enterprise-identity', 'non-company-content', 'recruiting-page', 'missing-enterprise-signal'].includes(identity.reason)
     ) {
-      if (!signals.email || (!signals.phone && !signals.whatsapp) || !signals.linkedin) {
-        const publicSignals = await searchCompanyContactSignals(companyName, cleanUrl(candidate.url), country);
-        signals = {
-          ...signals,
-          email: signals.email || publicSignals.email,
-          phone: signals.phone || publicSignals.phone,
-          whatsapp: signals.whatsapp || publicSignals.whatsapp,
-          contact: signals.contact || publicSignals.contact,
-          linkedin: signals.linkedin || publicSignals.linkedin,
-          facebook: signals.facebook || publicSignals.facebook,
-          instagram: signals.instagram || publicSignals.instagram,
-          googleMaps: signals.googleMaps || publicSignals.googleMaps,
-          address: signals.address || publicSignals.address,
-        };
-        lead = buildRealLead({
-          ...lead,
-          email: signals.email || lead.email,
-          phone: signals.phone || lead.phone,
-          whatsapp: signals.whatsapp || lead.whatsapp,
-          contact: signals.contact || lead.contact,
-          linkedin: signals.linkedin || lead.linkedin,
-          facebook: signals.facebook || lead.facebook,
-          instagram: signals.instagram || lead.instagram,
-          googleMaps: signals.googleMaps || lead.googleMaps,
-          address: signals.address || lead.address,
-        });
-      }
       return withLeadGrade(lead, industry, keyword);
     }
   } catch (_error) {
@@ -947,7 +1315,7 @@ function countLeadGrades(leads) {
 
 function getOfficialWebsiteSeeds(country, industry) {
   const normalizedCountry = normalizeText(normalizeCountryForSearch(country)).toLowerCase();
-  const normalizedIndustry = normalizeText(industry).toLowerCase();
+  const normalizedIndustry = normalizeText(`${industry} ${normalizeIndustryForSearch(industry)}`).toLowerCase();
   const seeds = [];
 
   if (normalizedIndustry.includes('led') || normalizedIndustry.includes('lighting')) {
@@ -983,7 +1351,7 @@ function getOfficialWebsiteSeeds(country, industry) {
     }
   }
 
-  if (normalizedIndustry.includes('jewelry') || normalizedIndustry.includes('jewellery') || normalizedIndustry.includes('bracelet') || /珠宝|首饰|饰品|耳钉|耳环|手链/.test(normalizedIndustry)) {
+  if (normalizedIndustry.includes('jewelry') || normalizedIndustry.includes('jewellery') || normalizedIndustry.includes('bracelet') || normalizedIndustry.includes('earring') || normalizedIndustry.includes('accessor') || /珠宝|首饰|饰品|耳钉|耳环|手镯|手链|项链|戒指/.test(normalizedIndustry)) {
     if (normalizedCountry.includes('vietnam')) {
       seeds.push(
         ['https://hmlvina.com', 'HML VINA Co., Ltd.'],
@@ -998,6 +1366,43 @@ function getOfficialWebsiteSeeds(country, industry) {
         ['https://www.kaprielian.com', 'Kaprielian'],
         ['https://www.castinghouse.com', 'Casting House'],
         ['https://www.stuller.com', 'Stuller'],
+        ['https://www.hooverandstrong.com', 'Hoover & Strong'],
+        ['https://www.riogrande.com', 'Rio Grande'],
+        ['https://www.firemountaingems.com', 'Fire Mountain Gems'],
+        ['https://www.jewelrydesigns.com', 'Jewelry Designs'],
+        ['https://www.gesswein.com', 'Gesswein'],
+      );
+    } else if (normalizedCountry.includes('united kingdom') || normalizedCountry === 'uk') {
+      seeds.push(
+        ['https://centrejewellery.com', 'Centre Jewellery'],
+        ['https://www.nf1-jewellery.co.uk', 'NF1 Jewellery'],
+        ['https://jewellerytradingcompany.com', 'Jewellery Trading Company'],
+        ['https://www.dbmjewellery.com', 'DBM Jewellery'],
+        ['https://www.cmejewellery.com', 'CME Jewellery'],
+        ['https://www.dowerandhall.com', 'Dower & Hall'],
+        ['https://www.pom925.com', 'POM Jewellery'],
+        ['https://www.cooksongold.com', 'Cooksongold'],
+        ['https://www.dominojewellery.com', 'Domino Jewellery'],
+        ['https://www.westonbeamor.com', 'Weston Beamor'],
+      );
+    }
+  }
+
+  if (normalizedIndustry.includes('furniture')) {
+    if (normalizedCountry.includes('vietnam')) {
+      seeds.push(
+        ['https://www.aa-corporation.com', 'AA Corporation'],
+        ['https://www.scansia.com', 'Scansia Pacific'],
+        ['https://www.kaiser1.com', 'Kaiser 1 Furniture'],
+        ['https://woodsland.com.vn', 'Woodsland'],
+        ['https://ducthanh.com', 'Duc Thanh Wood Processing'],
+        ['https://truongthanh.com', 'Truong Thanh Furniture'],
+        ['https://www.minhduongf.com', 'Minh Duong Furniture'],
+        ['https://www.rochdalespears.com', 'Rochdale Spears'],
+        ['https://www.savimex.com', 'Savimex'],
+        ['https://nhaxinh.com', 'Nha Xinh'],
+        ['https://www.hoaphat.com.vn', 'Hoa Phat Furniture'],
+        ['https://www.meetco-furniture.com', 'Meet&Co Office Furniture'],
       );
     }
   }
@@ -1021,6 +1426,12 @@ function getOfficialWebsiteSeeds(country, industry) {
         ['https://www.vemo.de', 'VEMO'],
         ['https://www.luk-aftermarket.com', 'LuK'],
         ['https://www.ina.de', 'INA'],
+        ['https://www.elring.com', 'Elring'],
+        ['https://www.hengst.com', 'Hengst Filtration'],
+        ['https://www.ms-motorservice.com', 'MS Motorservice'],
+        ['https://www.trwaftermarket.com', 'TRW Aftermarket'],
+        ['https://www.optimal-germany.com', 'OPTIMAL Germany'],
+        ['https://www.metzger-autoteile.de', 'METZGER Autoteile'],
       );
     }
   }
@@ -1035,7 +1446,8 @@ function getOfficialWebsiteSeeds(country, industry) {
 
 function buildLeadFromOfficialSeed(candidate, country, industry, keyword) {
   const product = inferBusinessProfile(`${industry} ${keyword}`, `${industry} ${keyword}`);
-  return withLeadGrade(buildRealLead({
+  return withLeadGrade({
+    ...buildRealLead({
     company: candidate.company,
     website: cleanUrl(candidate.url),
     country,
@@ -1043,10 +1455,13 @@ function buildLeadFromOfficialSeed(candidate, country, industry, keyword) {
     summary: buildCompanySummary(candidate.company, product, country),
     source: 'Official Website Seed',
     sourceUrl: '',
-  }), industry, keyword);
+    }),
+    industryMatchScore: 90,
+    countryFitScore: 100,
+  }, industry, keyword);
 }
 
-async function searchCompanyContactSignals(company, website, country) {
+async function runContactDiscoverySearch(company, website, country) {
   const domain = (() => {
     try {
       return new URL(website).hostname.replace(/^www\./, '');
@@ -1056,13 +1471,21 @@ async function searchCompanyContactSignals(company, website, country) {
   })();
   const queries = [
     `${company} ${country} email`,
-    `${company} contact sales`,
-    `${company} WhatsApp LinkedIn`,
+    `${company} contact`,
+    `${company} sales`,
+    `${company} purchasing`,
+    `${company} export`,
+    `${company} LinkedIn`,
+    `${company} Hunter`,
+    `${company} Apollo`,
+    `${company} RocketReach`,
+    `${company} Crunchbase`,
+    `${company} WhatsApp`,
     domain ? `${domain} email contact` : '',
   ].filter(Boolean);
   const pages = [];
 
-  for (const query of queries.slice(0, 3)) {
+  for (const query of queries.slice(0, 10)) {
     try {
       const html = await fetchPage(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, 2500);
       const $ = cheerio.load(html);
@@ -1074,6 +1497,30 @@ async function searchCompanyContactSignals(company, website, country) {
   }
 
   return collectCompanySignals(pages);
+}
+
+async function discoverContactSignals({ company, website, country, sitePages = [], fallbackText = '' }) {
+  const siteSignals = collectCompanySignals([
+    ...sitePages,
+    fallbackText ? { url: website, text: fallbackText } : null,
+  ].filter(Boolean));
+  const needsMore = !siteSignals.email || (!siteSignals.phone && !siteSignals.whatsapp) || !siteSignals.linkedin || !siteSignals.contact;
+  const publicSignals = needsMore
+    ? await runContactDiscoverySearch(company, website, country)
+    : {};
+
+  return {
+    email: siteSignals.email || publicSignals.email || '',
+    phone: siteSignals.phone || publicSignals.phone || '',
+    whatsapp: siteSignals.whatsapp || publicSignals.whatsapp || '',
+    contact: siteSignals.contact || publicSignals.contact || '',
+    contactTitle: siteSignals.contactTitle || publicSignals.contactTitle || '',
+    linkedin: siteSignals.linkedin || publicSignals.linkedin || '',
+    facebook: siteSignals.facebook || publicSignals.facebook || '',
+    instagram: siteSignals.instagram || publicSignals.instagram || '',
+    googleMaps: siteSignals.googleMaps || publicSignals.googleMaps || '',
+    address: siteSignals.address || publicSignals.address || '',
+  };
 }
 
 function decodeSearchTarget(value) {
@@ -1089,6 +1536,7 @@ function decodeSearchTarget(value) {
 function isSearchEngineUrl(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
+    if (/^(www\.)?google\.[a-z.]+$/i.test(host)) return true;
     return ['google.com', 'www.google.com', 'bing.com', 'www.bing.com', 'duckduckgo.com', 'html.duckduckgo.com'].includes(host);
   } catch {
     return false;
@@ -1278,20 +1726,22 @@ app.post('/enrich', async (req, res) => {
 });
 
 app.post('/search', async (req, res) => {
-  const { country, industry, keyword } = req.body;
-  if (!country || !industry || !keyword) {
-    return res.status(400).json({ error: 'country, industry and keyword are required' });
+  const { country, industry, keyword = '' } = req.body;
+  if (!country || !industry) {
+    return res.status(400).json({ error: 'country and industry are required' });
   }
 
   try {
     const searchCountry = normalizeCountryForSearch(country);
-    const searchKeyword = `${searchCountry} ${industry} ${keyword}`;
-    const expandedQueries = buildSearchQueries({ country, industry, keyword });
+    const searchIndustry = normalizeIndustryForSearch(industry);
+    const searchKeyword = `${searchCountry} ${searchIndustry}`;
+    const expandedQueries = buildSearchQueries({ country, industry });
     console.info('[search debug] request', {
       country,
       industry,
       keyword,
       normalizedCountry: searchCountry,
+      normalizedIndustry: searchIndustry,
       actualSearchKeyword: searchKeyword,
     });
     const searchPlans = expandedQueries.map((query) => ({ query, source: 'Google Search' }));
@@ -1317,17 +1767,17 @@ app.post('/search', async (req, res) => {
     const allCandidates = [...searchCandidates, ...seedCandidates];
     const uniqueCandidates = dedupeCandidates(allCandidates);
     const duplicateRemovedCount = Math.max(0, allCandidates.length - uniqueCandidates.length);
-    const officialCandidates = selectOfficialCandidates(uniqueCandidates, BUILD_CANDIDATE_LIMIT);
+    const officialCandidates = selectOfficialCandidates(uniqueCandidates, BUILD_CANDIDATE_LIMIT, searchIndustry);
     const rawCompanies = dedupeLeadsByWebsite((await Promise.all(officialCandidates.map(async (candidate) => {
-      const lead = await buildLeadFromSearchCandidate(candidate, country, industry, keyword, true);
+      const lead = await buildLeadFromSearchCandidate(candidate, country, searchIndustry, '', true);
       if (lead) return lead;
       if (candidate.source === 'Official Website Seed') {
-        return buildLeadFromOfficialSeed(candidate, country, industry, keyword);
+        return buildLeadFromOfficialSeed(candidate, country, searchIndustry, '');
       }
       return null;
     }))).filter(Boolean));
     const companies = rawCompanies
-      .map((lead) => withLeadGrade(lead, industry, keyword))
+      .map((lead) => withLeadGrade(lead, searchIndustry, ''))
       .sort((a, b) => (b.aiRecommendationScore || 0) - (a.aiRecommendationScore || 0) || gradeRank(b.grade) - gradeRank(a.grade) || (b.score || 0) - (a.score || 0))
       .slice(0, FINAL_COMPANY_LIMIT);
     const gradeCounts = countLeadGrades(companies);

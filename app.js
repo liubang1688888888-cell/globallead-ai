@@ -58,6 +58,14 @@ function formatElapsed(ms) {
   return `${(ms / 1000).toFixed(1)} 秒`;
 }
 
+function formatScore(value) {
+  return Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
+}
+
+function isSearchDebugMode() {
+  return new URLSearchParams(window.location.search).get('debug') === '1' || localStorage.getItem('globallead-debug') === '1';
+}
+
 function getSourceCounts(leads) {
   return leads.reduce((counts, lead) => {
     const source = String(lead.source || '').toLowerCase();
@@ -79,12 +87,14 @@ function renderSearchSummary(meta) {
   const counts = meta.engineCounts || {};
   const gradeCounts = meta.gradeCounts || {};
   const keywords = meta.expandedQueries || [];
+  const debug = isSearchDebugMode();
   summary.hidden = false;
   summary.innerHTML = `
     <div class="summary-metric"><span>国家</span><strong>${escapeHtml(meta.country || '—')}</strong></div>
-    <div class="summary-metric"><span>关键词</span><strong>${escapeHtml(meta.keyword || '—')}</strong></div>
-    <div class="summary-metric"><span>找到</span><strong>${escapeHtml(meta.total || 0)} 家真实企业</strong></div>
+    <div class="summary-metric"><span>行业</span><strong>${escapeHtml(meta.industry || meta.keyword || '—')}</strong></div>
+    <div class="summary-metric"><span>AI推荐</span><strong>${escapeHtml(meta.total || 0)} 家最值得开发客户</strong></div>
     <div class="summary-metric"><span>耗时</span><strong>${escapeHtml(formatElapsed(meta.elapsedMs))}</strong></div>
+    ${debug ? `
     <div class="summary-metric"><span>搜索源返回总数</span><strong>${escapeHtml(meta.sourceReturnedTotal || 0)}</strong></div>
     <div class="summary-metric"><span>AI评分企业数</span><strong>${escapeHtml(meta.scoredCandidateCount || meta.total || 0)}</strong></div>
     <div class="summary-metric"><span>重复删除数量</span><strong>${escapeHtml(meta.duplicateRemovedCount || 0)}</strong></div>
@@ -98,9 +108,12 @@ function renderSearchSummary(meta) {
       </div>
     </div>
     <div class="summary-keywords">
-      <span>搜索关键词</span>
+      <span>AI扩展搜索词</span>
       <p>${escapeHtml(keywords.slice(0, 10).join(' / ') || meta.keyword || '—')}</p>
     </div>
+    ` : `
+    <div class="summary-metric wide"><span>AI已分析</span><strong>${escapeHtml(meta.sourceReturnedTotal || meta.scoredCandidateCount || meta.total || 0)} 家企业，已按推荐指数排序</strong></div>
+    `}
   `;
 }
 
@@ -492,6 +505,8 @@ function showLeadDetails(lead) {
           <div class="crm-meta-row"><span>成立时间</span><strong>${escapeHtml(lead.foundedYear || '—')}</strong></div>
           <div class="crm-meta-row"><span>员工数量</span><strong>${escapeHtml(lead.employeeSize || '—')}</strong></div>
               <div class="crm-meta-row score-row"><span>采购评分</span><strong>${score}</strong></div>
+              <div class="crm-meta-row score-row"><span>企业评分</span><strong>${escapeHtml(formatScore(lead.companyScore))}</strong></div>
+              <div class="crm-meta-row score-row"><span>联系人完整度</span><strong>${escapeHtml(formatScore(lead.contactCompletenessScore))}</strong></div>
               <div class="crm-meta-row score-row"><span>AI推荐指数</span><strong>${escapeHtml(lead.aiRecommendationScore || 0)}</strong></div>
             </div>
           </div>
@@ -502,6 +517,8 @@ function showLeadDetails(lead) {
               <div class="crm-meta-row"><span>Email</span><strong>${escapeHtml(lead.email || '未公开')}</strong></div>
               <div class="crm-meta-row"><span>Phone</span><strong>${escapeHtml(lead.phone || '未公开')}</strong></div>
               <div class="crm-meta-row"><span>WhatsApp</span><strong>${escapeHtml(lead.whatsapp || '未公开')}</strong></div>
+              <div class="crm-meta-row"><span>联系人</span><strong>${escapeHtml(lead.contact || '未公开')}</strong></div>
+              <div class="crm-meta-row"><span>职位</span><strong>${escapeHtml(lead.contactTitle || '未公开')}</strong></div>
               <div class="crm-meta-row"><span>LinkedIn</span>${lead.linkedin ? `<a href="${lead.linkedin}" target="_blank">${escapeHtml(lead.linkedin)}</a>` : '<strong>—</strong>'}</div>
               <div class="crm-meta-row"><span>Facebook</span>${lead.facebook ? `<a href="${lead.facebook}" target="_blank">${escapeHtml(lead.facebook)}</a>` : '<strong>—</strong>'}</div>
               <div class="crm-meta-row"><span>Instagram</span>${lead.instagram ? `<a href="${lead.instagram}" target="_blank">${escapeHtml(lead.instagram)}</a>` : '<strong>—</strong>'}</div>
@@ -619,10 +636,18 @@ function renderLeads() {
         <span class="grade-pill ${getGradeClass(grade)}">${escapeHtml(grade)}级</span>
         <span class="priority-pill ${priority.className}">${getStars(lead.score || 3)} ${escapeHtml(priority.label)}</span>
       </div>
+      <div class="lead-data-grid">
+        <p class="meta">企业评分：${escapeHtml(formatScore(lead.companyScore))}</p>
+        <p class="meta">联系人完整度：${escapeHtml(formatScore(lead.contactCompletenessScore))}</p>
+        <p class="meta">AI推荐指数：${escapeHtml(formatScore(lead.aiRecommendationScore))}</p>
+        <p class="meta">客户等级：${escapeHtml(grade)}级</p>
+      </div>
       <p class="meta">${escapeHtml(lead.country)} · ${escapeHtml(lead.source)}</p>
       <div class="lead-data-grid">
         <p class="meta">邮箱：${escapeHtml(lead.email || '未公开')}</p>
         <p class="meta">电话：${escapeHtml(lead.phone || '未公开')}</p>
+        <p class="meta">联系人：${escapeHtml(lead.contact || '未公开')}</p>
+        <p class="meta">职位：${escapeHtml(lead.contactTitle || '未公开')}</p>
         <p class="meta">城市：${escapeHtml(lead.city || '—')}</p>
         <p class="meta">成立时间：${escapeHtml(lead.foundedYear || '—')}</p>
       </div>
@@ -899,9 +924,9 @@ function exportCustomersExcel() {
 async function handleSearch() {
   const country = document.getElementById('countryInput').value.trim();
   const industry = document.getElementById('industryInput').value.trim();
-  const keyword = document.getElementById('keywordInput').value.trim();
-  if (!country || !industry || !keyword) {
-    setStatus('请填写国家、行业和关键词');
+  const keyword = '';
+  if (!country || !industry) {
+    setStatus('请填写国家和行业');
     return;
   }
   const startedAt = performance.now();
@@ -909,7 +934,8 @@ async function handleSearch() {
   state.crmFilter = { country, industry };
   state.searchMeta = {
     country,
-    keyword: [industry, keyword].filter(Boolean).join(' '),
+    industry,
+    keyword: industry,
     total: 0,
     elapsedMs: 0,
     engineCounts: { google: 0, bing: 0, duckDuckGo: 0 },
@@ -922,18 +948,17 @@ async function handleSearch() {
   renderSearchSummary(state.searchMeta);
   showSearchLoading();
   setStatus('AI正在全球搜索真实企业...');
-  console.debug('[search request]', { country, industry, keyword });
+  console.debug('[search request]', { country, industry });
   try {
     const response = await fetch('/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ country, industry, keyword }),
+      body: JSON.stringify({ country, industry }),
     });
     const data = await response.json();
     console.debug('[search response]', {
       country,
       industry,
-      keyword,
       count: data.companies?.length || 0,
       searchStats: data.searchStats,
     });
@@ -943,15 +968,19 @@ async function handleSearch() {
         ...lead,
         country: lead.country || country,
         industry,
-        searchKeyword: keyword,
+        searchKeyword: industry,
         grade: lead.grade || 'D',
+        aiRecommendationScore: lead.aiRecommendationScore || 0,
+        companyScore: lead.companyScore || 0,
+        contactCompletenessScore: lead.contactCompletenessScore || 0,
         score: lead.score || scoreLead(lead),
-        recommendation: buildRecommendation(lead),
+        recommendation: lead.recommendation || buildRecommendation(lead),
       }))
-      .sort((a, b) => gradeRank(getLeadGrade(b)) - gradeRank(getLeadGrade(a)) || (b.score || 0) - (a.score || 0));
+      .sort((a, b) => (b.aiRecommendationScore || 0) - (a.aiRecommendationScore || 0) || gradeRank(getLeadGrade(b)) - gradeRank(getLeadGrade(a)) || (b.score || 0) - (a.score || 0));
     state.searchMeta = {
       country,
-      keyword: [industry, keyword].filter(Boolean).join(' '),
+      industry,
+      keyword: industry,
       total: state.leads.length,
       elapsedMs: performance.now() - startedAt,
       engineCounts: data.searchStats || getSourceCounts(state.leads),

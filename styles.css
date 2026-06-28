@@ -769,6 +769,32 @@ td {
 @media (max-width: 760px) {
   .app-shell {
     padding: 14px;
+    gap: 12px;
+  }
+
+  .sidebar {
+    padding: 14px 16px;
+    border-radius: 18px;
+  }
+
+  .sidebar h1 {
+    margin-bottom: 0;
+    font-size: 1.25rem;
+  }
+
+  .sidebar .muted,
+  .nav-links {
+    display: none;
+  }
+
+  .search-panel {
+    order: -1;
+  }
+
+  input,
+  select,
+  button {
+    min-height: 46px;
   }
 
   .topbar,
